@@ -7,119 +7,193 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Janry',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        // colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
+        dialogBackgroundColor: Colors.white,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MyHomePage(),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+  const MyHomePage({super.key});
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+  TextEditingController messageTextController = TextEditingController();
+
+  static const String _kStrings = 'Flutter ChatGPT';
+
+  String get _currentString => _kStrings;
+
+  ScrollController scrollController = ScrollController();
+  late Animation<int> _characterCount;
+  late AnimationController animationController;
+
+  setupAnimations () {
+    animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2500)
+    );
+    _characterCount = StepTween(begin: 0, end: _currentString.length).animate(
+      CurvedAnimation(
+        parent: animationController,
+        curve: Curves.easeIn
+      )
+    );
+    animationController.addListener(() {
+      setState(() {});
     });
+    animationController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        Future.delayed(const Duration(seconds: 1)).then((value) {
+          animationController.reverse();
+        });
+      } else if (status == AnimationStatus.dismissed) {
+        Future.delayed(const Duration(seconds: 1)).then((value) {
+          animationController.forward();
+        });
+      }
+    });
+
+    animationController.forward();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    setupAnimations();
+  }
+
+  @override
+  void dispose() {
+    messageTextController.dispose();
+    scrollController.dispose();
+
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: Card(
+                  child: PopupMenuButton(
+                    itemBuilder: (context) {
+                      return [
+                        const PopupMenuItem(
+                          child: ListTile(
+                            title: Text('History'),
+                          )
+                        ),
+                        const PopupMenuItem(
+                          child: ListTile(
+                            title: Text('Settings'),
+                          )
+                        ),
+                        const PopupMenuItem(
+                          child: ListTile(
+                            title: Text('New chat'),
+                          )
+                        )
+                      ];
+                    }
+                  ),
+                ),
+              ),
+              Expanded(
+                child: AnimatedBuilder(
+                  animation: _characterCount,
+                  builder: (BuildContext context, Widget? child) {
+                    String text = _currentString.substring(0, _characterCount.value);
+                    return Row(
+                      children: [
+                        Text(
+                          text,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 24
+                          ),
+                        ),
+                        CircleAvatar(
+                          radius: 8,
+                          backgroundColor: Colors.orange[200],
+                        )
+                      ],
+                    );
+                  },
+                )
+              ),
+              Dismissible( // 해당 탭 슬라이스 효과
+                key: const Key('chat-bar'), // 필수 값
+                direction: DismissDirection.startToEnd,
+                onDismissed: (d) {
+                  // d 는 direction
+                  if (d == DismissDirection.startToEnd) {
+                    // logic
+                  }
+                },
+                background: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text('New chat')
+                  ],
+                ),
+                confirmDismiss: (d) async {
+                  // d 는 direction
+                  if (d == DismissDirection.startToEnd) {
+                    // logic
+                  }
+                  return null;
+                },
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(32),
+                          border: Border.all()
+                        ),
+                        child: TextField(
+                          controller: messageTextController,
+                          decoration: const InputDecoration(
+                            border: InputBorder.none,
+                            hintText: 'Message'
+                          ),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      iconSize: 42,
+                      onPressed: (){},
+                      icon: const Icon(Icons.arrow_circle_up)
+                    )
+                  ],
+                ),
+              )
+            ],
+          ),
+        )
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }
