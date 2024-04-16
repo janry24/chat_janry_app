@@ -1,4 +1,8 @@
+import 'dart:convert';
+
+import 'package:chat_janry_app/model/chat_model.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 void main() {
   runApp(const MyApp());
@@ -32,6 +36,10 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
 
   TextEditingController messageTextController = TextEditingController();
+  final List<Messages> _historyList = List.empty(growable: true);
+
+  String apiKey = '';
+  String streamText = '';
 
   static const String _kStrings = 'Flutter ChatGPT';
 
@@ -41,7 +49,15 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
   late Animation<int> _characterCount;
   late AnimationController animationController;
 
-  setupAnimations () {
+  void _scrollDown() {
+    scrollController.animateTo(
+      scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.fastOutSlowIn
+    );
+  }
+
+  setupAnimations() {
     animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2500)
@@ -70,6 +86,42 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
     animationController.forward();
   }
 
+  Future requestChat(String text) async {
+    ChatCompletionModel openAiModel = ChatCompletionModel(
+      model: 'gpt-3.5-turbo',
+      messages: [
+        Messages(
+          role: 'system',
+          content: 'You are a helpful assistant.'
+        ),
+        ..._historyList
+      ],
+      stream: false
+    );
+    final url = Uri.https('api.openai.com', 'v1/chat/completions');
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $apiKey',
+        'Content-Type': 'application/json'
+      },
+      body: jsonEncode(openAiModel.toJson())
+    );
+    print(response.body);
+    if (response.statusCode == 200) {
+      final jsonData = jsonDecode(utf8.decode(response.bodyBytes)) as Map;
+      String role = jsonData['choices'][0]['message']['role'];
+      String content = jsonData['choices'][0]['message']['content'];
+      _historyList.last = _historyList.last.copyWidth(
+        role: role,
+        content: content
+      );
+      setState(() {
+        _scrollDown();
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -80,8 +132,29 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
   void dispose() {
     messageTextController.dispose();
     scrollController.dispose();
-
     super.dispose();
+  }
+
+  Future clearChat() async {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('새로운 대화의 시작'),
+        content: const Text('새로운 대화를 시작하시겠어요?'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              setState(() {
+                messageTextController.clear();
+                _historyList.clear();
+              });
+            },
+            child: const Text('네')
+          )
+        ],
+      )
+    );
   }
 
   @override
@@ -109,8 +182,11 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                             title: Text('Settings'),
                           )
                         ),
-                        const PopupMenuItem(
-                          child: ListTile(
+                        PopupMenuItem(
+                          onTap: () {
+                            clearChat();
+                          },
+                          child: const ListTile(
                             title: Text('New chat'),
                           )
                         )
@@ -120,26 +196,75 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                 ),
               ),
               Expanded(
-                child: AnimatedBuilder(
-                  animation: _characterCount,
-                  builder: (BuildContext context, Widget? child) {
-                    String text = _currentString.substring(0, _characterCount.value);
-                    return Row(
-                      children: [
-                        Text(
-                          text,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 24
-                          ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: _historyList.isEmpty ? Center(
+                    child: AnimatedBuilder(
+                      animation: _characterCount,
+                      builder: (BuildContext context, Widget? child) {
+                        String text = _currentString.substring(0, _characterCount.value);
+                        return Row(
+                          children: [
+                            Text(
+                              text,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 24
+                              ),
+                            ),
+                            CircleAvatar(
+                              radius: 8,
+                              backgroundColor: Colors.orange[200],
+                            )
+                          ],
+                        );
+                      },
+                    ),
+                  ) : GestureDetector(
+                        onTap: () => FocusScope.of(context).unfocus(),
+                        child: ListView.builder(
+                          itemCount: _historyList.length,
+                          itemBuilder: (context, index) {
+                            if (_historyList[index].role == 'user') {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const CircleAvatar(),
+                                    const SizedBox(width: 8,),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text('User'),
+                                          Text(_historyList[index].content)
+                                        ],
+                                      )
+                                    )
+                                  ],
+                                ),
+                              );
+                            }
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const CircleAvatar(backgroundColor: Colors.teal,),
+                                const SizedBox(width: 8,),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('Janry'),
+                                      Text(_historyList[index].content)
+                                    ],
+                                  )
+                                )
+                              ],
+                            );
+                          }
                         ),
-                        CircleAvatar(
-                          radius: 8,
-                          backgroundColor: Colors.orange[200],
-                        )
-                      ],
-                    );
-                  },
+                  )
                 )
               ),
               Dismissible( // 해당 탭 슬라이스 효과
@@ -160,7 +285,8 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                 confirmDismiss: (d) async {
                   // d 는 direction
                   if (d == DismissDirection.startToEnd) {
-                    // logic
+                    if (_historyList.isEmpty) return;
+                    clearChat();
                   }
                   return null;
                 },
@@ -184,7 +310,31 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                     ),
                     IconButton(
                       iconSize: 42,
-                      onPressed: (){},
+                      onPressed: () async {
+                        if (messageTextController.text.isEmpty) {
+                          // messageTextController 입력 값이 없을 때
+                          return;
+                        }
+                        // 입력 버튼을 누르면 history에 데이터 쌓기
+                        setState(() {
+                          _historyList.add(Messages(
+                            role: 'user',
+                            content: messageTextController.text.trim()
+                          ));
+                          _historyList.add(Messages(
+                            role: 'assistant',
+                            content: ''
+                          ));
+                        });
+                        try {
+                          print(messageTextController.text);
+                          await requestChat(messageTextController.text.trim());
+                          messageTextController.clear();
+                          streamText = '';
+                        } catch (e) {
+                          print(e.toString());
+                        }
+                      },
                       icon: const Icon(Icons.arrow_circle_up)
                     )
                   ],
