@@ -25,7 +25,7 @@ class Messages {
     return {'role': role, 'content': content};
   }
 
-  Messages copyWidth({String? role, String? content}) {
+  Messages copyWith({String? role, String? content}) {
     return Messages(role: role ?? this.role, content: content ?? this.content);
   }
 }

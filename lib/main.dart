@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:chat_janry_app/model/chat_model.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:rxdart/rxdart.dart';
 
 void main() {
   runApp(const MyApp());
@@ -112,13 +113,75 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
       final jsonData = jsonDecode(utf8.decode(response.bodyBytes)) as Map;
       String role = jsonData['choices'][0]['message']['role'];
       String content = jsonData['choices'][0]['message']['content'];
-      _historyList.last = _historyList.last.copyWidth(
+      _historyList.last = _historyList.last.copyWith(
         role: role,
         content: content
       );
       setState(() {
         _scrollDown();
       });
+    }
+  }
+
+  Stream requestChatStream(String text) async* {
+    print(text);
+    ChatCompletionModel openAiModel = ChatCompletionModel(
+      model: 'gpt-3.5-turbo',
+      messages: [
+        Messages(
+          role: 'system',
+          content: 'You are a helpful assistant.'
+        ),
+        ..._historyList
+      ],
+      stream: true
+    );
+
+    final url = Uri.https('api.openai.com', 'v1/chat/completions');
+    final request = http.Request('POST', url)..headers.addAll({
+      'Authorization': 'Bearer $apiKey',
+      'Content-Type': 'application/json; chraset=UTF-8',
+      'Connection': 'keep-alive',
+      'Accept': '*/*',
+      'Accept-Encoding': 'gzip, deflate, br',
+    });
+
+    request.body = jsonEncode(openAiModel.toJson());
+
+    final response = await http.Client().send(request);
+    final byteStream = response.stream.asyncExpand(
+      (event) => Rx.timer(
+        event,
+        const Duration(milliseconds: 50)
+      )
+    );
+    final statusCode = response.statusCode;
+    var responseText = '';
+
+    await for(final byte in byteStream) {
+      var decode = utf8.decode(byte, allowMalformed: false);
+      final strings = decode.split('data: ');
+      for (final string in strings) {
+        final trimmedString = string.trim();
+        if (trimmedString.isNotEmpty && !trimmedString.endsWith('[DONE]')) {
+          final map = jsonDecode(trimmedString) as Map;
+          final choices = map['choices'] as List;
+          final delta = choices[0]['delta'] as Map;
+          if (delta['content'] != null) {
+            final content = delta['content'] as String;
+            responseText += content;
+            setState(() {
+              streamText = responseText;
+            });
+            yield content;
+          }
+        }
+      }
+    }
+
+    print(responseText);
+    if (responseText.isNotEmpty) {
+      setState(() {});
     }
   }
 
@@ -223,6 +286,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                   ) : GestureDetector(
                         onTap: () => FocusScope.of(context).unfocus(),
                         child: ListView.builder(
+                          controller: scrollController,
                           itemCount: _historyList.length,
                           itemBuilder: (context, index) {
                             if (_historyList[index].role == 'user') {
@@ -327,8 +391,20 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                           ));
                         });
                         try {
-                          print(messageTextController.text);
-                          await requestChat(messageTextController.text.trim());
+                          var text = '';
+                          print(text);
+                          final stream = requestChatStream(
+                            messageTextController.text.trim()
+                          );
+                          print(stream);
+                          await for(final textChunk in stream) {
+                            text += textChunk;
+                            setState(() {
+                              _historyList.last = _historyList.last.copyWith(content: text);
+                              _scrollDown();
+                            });
+                          }
+                          // await requestChat(messageTextController.text.trim());
                           messageTextController.clear();
                           streamText = '';
                         } catch (e) {
