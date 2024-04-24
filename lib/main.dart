@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:chat_janry_app/model/chat_model.dart';
 import 'package:flutter/material.dart';
+import 'package:chat_janry_app/model/chat_model.dart';
 import 'package:http/http.dart' as http;
 import 'package:rxdart/rxdart.dart';
 
@@ -18,24 +18,25 @@ class MyApp extends StatelessWidget {
       title: 'Janry',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        // colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
         dialogBackgroundColor: Colors.white,
       ),
-      home: const MyHomePage(),
+      home: const MyHomePage(title: 'Janry Home Page'),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key});
+  const MyHomePage({super.key, required this.title});
+
+  final String title;
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
 class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
-
   TextEditingController messageTextController = TextEditingController();
   final List<Messages> _historyList = List.empty(growable: true);
 
@@ -99,8 +100,8 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
       ],
       stream: false
     );
-    final url = Uri.https('api.openai.com', 'v1/chat/completions');
-    final response = await http.post(
+    final url = Uri.https('api.openai.com', '/v1/chat/completions');
+    final resp = await http.post(
       url,
       headers: {
         'Authorization': 'Bearer $apiKey',
@@ -108,9 +109,9 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
       },
       body: jsonEncode(openAiModel.toJson())
     );
-    print(response.body);
-    if (response.statusCode == 200) {
-      final jsonData = jsonDecode(utf8.decode(response.bodyBytes)) as Map;
+    print(resp.body);
+    if (resp.statusCode == 200) {
+      final jsonData = jsonDecode(utf8.decode(resp.bodyBytes)) as Map;
       String role = jsonData['choices'][0]['message']['role'];
       String content = jsonData['choices'][0]['message']['content'];
       _historyList.last = _historyList.last.copyWith(
@@ -124,7 +125,6 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
   }
 
   Stream requestChatStream(String text) async* {
-    print(text);
     ChatCompletionModel openAiModel = ChatCompletionModel(
       model: 'gpt-3.5-turbo',
       messages: [
@@ -137,50 +137,54 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
       stream: true
     );
 
-    final url = Uri.https('api.openai.com', 'v1/chat/completions');
+    final url = Uri.https('api.openai.com', '/v1/chat/completions');
     final request = http.Request('POST', url)..headers.addAll({
       'Authorization': 'Bearer $apiKey',
-      'Content-Type': 'application/json; chraset=UTF-8',
+      'Content-Type': 'application/json; charset=UTF-8',
       'Connection': 'keep-alive',
       'Accept': '*/*',
       'Accept-Encoding': 'gzip, deflate, br',
     });
-
     request.body = jsonEncode(openAiModel.toJson());
 
-    final response = await http.Client().send(request);
-    final byteStream = response.stream.asyncExpand(
+    final resp = await http.Client().send(request);
+    final byteStream = resp.stream.asyncExpand(
       (event) => Rx.timer(
         event,
         const Duration(milliseconds: 50)
       )
     );
-    final statusCode = response.statusCode;
-    var responseText = '';
+    final statusCode = resp.statusCode;
+    var respText = '';
 
-    await for(final byte in byteStream) {
-      var decode = utf8.decode(byte, allowMalformed: false);
-      final strings = decode.split('data: ');
-      for (final string in strings) {
-        final trimmedString = string.trim();
-        if (trimmedString.isNotEmpty && !trimmedString.endsWith('[DONE]')) {
-          final map = jsonDecode(trimmedString) as Map;
-          final choices = map['choices'] as List;
-          final delta = choices[0]['delta'] as Map;
-          if (delta['content'] != null) {
-            final content = delta['content'] as String;
-            responseText += content;
-            setState(() {
-              streamText = responseText;
-            });
-            yield content;
+    await for (final byte in byteStream) {
+      try {
+        var decoded = utf8.decode(byte, allowMalformed: false);
+        if (decoded.contains('"content":')) {
+          final strings = decoded.split('data: ');
+          for (final string in strings) {
+            final trimmedString = string.trim();
+            if (trimmedString.isNotEmpty && !trimmedString.endsWith('[DONE]')) {
+              final map = jsonDecode(trimmedString) as Map;
+              final choices = map['choices'] as List;
+              final delta = choices[0]['delta'] as Map;
+              if (delta['content'] != null) {
+                final content = delta['content'] as String;
+                respText += content;
+                setState(() {
+                  streamText = respText;
+                });
+                yield content;
+              }
+            }
           }
         }
+      } catch (e) {
+        print(e.toString());
       }
     }
 
-    print(responseText);
-    if (responseText.isNotEmpty) {
+    if (respText.isNotEmpty) {
       setState(() {});
     }
   }
@@ -237,12 +241,12 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                       return [
                         const PopupMenuItem(
                           child: ListTile(
-                            title: Text('History'),
+                            title: Text('히스토리'),
                           )
                         ),
                         const PopupMenuItem(
                           child: ListTile(
-                            title: Text('Settings'),
+                            title: Text('설정'),
                           )
                         ),
                         PopupMenuItem(
@@ -250,7 +254,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                             clearChat();
                           },
                           child: const ListTile(
-                            title: Text('New chat'),
+                            title: Text('새로운 채팅'),
                           )
                         )
                       ];
@@ -260,7 +264,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
                   child: _historyList.isEmpty ? Center(
                     child: AnimatedBuilder(
                       animation: _characterCount,
@@ -284,50 +288,50 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                       },
                     ),
                   ) : GestureDetector(
-                        onTap: () => FocusScope.of(context).unfocus(),
-                        child: ListView.builder(
-                          controller: scrollController,
-                          itemCount: _historyList.length,
-                          itemBuilder: (context, index) {
-                            if (_historyList[index].role == 'user') {
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const CircleAvatar(),
-                                    const SizedBox(width: 8,),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const Text('User'),
-                                          Text(_historyList[index].content)
-                                        ],
-                                      )
-                                    )
-                                  ],
-                                ),
-                              );
-                            }
-                            return Row(
+                    onTap: () => FocusScope.of(context).unfocus(),
+                    child: ListView.builder(
+                      controller: scrollController,
+                      itemCount: _historyList.length,
+                      itemBuilder: (context, index) {
+                        if (_historyList[index].role == 'user') {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const CircleAvatar(backgroundColor: Colors.teal,),
-                                const SizedBox(width: 8,),
+                                const CircleAvatar(),
+                                const SizedBox(width: 8),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      const Text('Janry'),
+                                      const Text('User'),
                                       Text(_historyList[index].content)
                                     ],
                                   )
                                 )
                               ],
-                            );
-                          }
-                        ),
+                            ),
+                          );
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const CircleAvatar(backgroundColor: Colors.teal,),
+                            const SizedBox(width: 8,),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Janry'),
+                                  Text(_historyList[index].content)
+                                ],
+                              )
+                            )
+                          ],
+                        );
+                      }
+                    ),
                   )
                 )
               ),
@@ -343,7 +347,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                 background: const Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text('New chat')
+                    Text('New Chat')
                   ],
                 ),
                 confirmDismiss: (d) async {
@@ -379,25 +383,26 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                           // messageTextController 입력 값이 없을 때
                           return;
                         }
-                        // 입력 버튼을 누르면 history에 데이터 쌓기
                         setState(() {
-                          _historyList.add(Messages(
-                            role: 'user',
-                            content: messageTextController.text.trim()
-                          ));
-                          _historyList.add(Messages(
-                            role: 'assistant',
-                            content: ''
-                          ));
+                          _historyList.add(
+                            Messages(
+                              role: 'user',
+                              content: messageTextController.text.trim()
+                            ),
+                          );
+                          _historyList.add(
+                            Messages(
+                              role: 'assistant',
+                              content: ''
+                            )
+                          );
                         });
                         try {
                           var text = '';
-                          print(text);
                           final stream = requestChatStream(
                             messageTextController.text.trim()
                           );
-                          print(stream);
-                          await for(final textChunk in stream) {
+                          await for (final textChunk in stream) {
                             text += textChunk;
                             setState(() {
                               _historyList.last = _historyList.last.copyWith(content: text);
